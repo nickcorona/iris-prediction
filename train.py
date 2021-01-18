@@ -5,7 +5,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 df = pd.read_csv(
-    r"data\train.csv",
+    r"data\iris.csv",
     parse_dates=["date"],
     index_col=[],
 )
