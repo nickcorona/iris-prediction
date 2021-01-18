@@ -12,8 +12,8 @@ from statsmodels.nonparametric.smoothers_lowess import lowess
 from helpers import encode_dates, loguniform, similarity_encode
 
 df = pd.read_csv(
-    r"data\train.csv",
-    parse_dates=["date"],
+    r"data\iris.csv",
+    parse_dates=[],
     index_col=[],
     delimiter=",",
     low_memory=False,
@@ -25,10 +25,10 @@ print(
     .sort_values(["dtype", "proportion unique"])
 )
 
-TARGET = "quantity"
+TARGET = "Species"
 df = df.dropna(subset=[TARGET])
-TARGET_LEAKAGE = []
-y = df[TARGET]
+TARGET_LEAKAGE = ["Id"]
+y = df[TARGET].replace(["Iris-setosa", "Iris-versicolor", "Iris-virginica"], [0, 1, 2])
 X = df.drop(
     [TARGET, *TARGET_LEAKAGE],
     axis=1,
@@ -56,11 +56,11 @@ if ENCODE:
         drop_original=False,
     )
 
-CATEGORIZE = True
+CATEGORIZE = False
 if CATEGORIZE:
     X[obj_cols] = X[obj_cols].astype("category")
 
-DATE_ENCODE = True
+DATE_ENCODE = False
 if DATE_ENCODE:
     X = encode_dates(X, "date")
 
@@ -81,8 +81,8 @@ Xs, ys = Xt.loc[sample_idx], yt.loc[sample_idx]
 ds = lgb.Dataset(Xs, ys)
 dv = lgb.Dataset(Xv, yv, free_raw_data=False)
 
-OBJECTIVE = "regression"
-METRIC = "rmse"
+OBJECTIVE = "multiclass"
+METRIC = "multi_logloss"
 MAXIMIZE = False
 EARLY_STOPPING_ROUNDS = 10
 MAX_ROUNDS = 10000
@@ -93,7 +93,7 @@ params = {
     "metric": METRIC,
     "verbose": -1,
     "n_jobs": 6,
-    # "num_classes": 1,
+    "num_classes": 3,
     # "tweedie_variance_power": 1.3,
 }
 
@@ -113,8 +113,8 @@ plt.show()
 TUNE_ETA = True
 best_etas = {"learning_rate": [], "score": []}
 if TUNE_ETA:
-    for _ in range(30):
-        eta = loguniform(-6, 0)
+    for _ in range(120):
+        eta = loguniform(-5, 1)
         best_etas["learning_rate"].append(eta)
         params["learning_rate"] = eta
         model = lgb.train(
@@ -158,8 +158,8 @@ if TUNE_ETA:
     params["learning_rate"] = best_eta
 else:
     # best learning rate once run
-    # rmse: 3490.8
-    params["learning_rate"] = 0.0035969087735309765
+    # multi_logloss: 0.00120139
+    params["learning_rate"] = 0.22150522497815395
 
 model = lgb.train(
     params,
@@ -171,7 +171,7 @@ model = lgb.train(
     verbose_eval=REPORT_ROUNDS,
 )
 
-DROP_CORRELATED = False
+DROP_CORRELATED = True
 if DROP_CORRELATED:
     threshold = 0.75
     corr = Xt.corr(method="kendall")
@@ -229,7 +229,7 @@ if DROP_CORRELATED:
         )
         print(f"ending score: {best_score:.4f}")
 else:
-    correlated_features = {"id"}
+    correlated_features = {"SepalWidthCm"}
 
 correlation_elimination = len(correlated_features) > 0
 if correlation_elimination:
@@ -295,7 +295,7 @@ if DROP_UNIMPORTANT:
         f"dropped features: {unimportant_features if len(unimportant_features) > 0 else None}"
     )
 else:
-    unimportant_features = ["date_hour", "date_minute", "date_second", "lat"]
+    unimportant_features = []
 
 feature_elimination = len(unimportant_features) > 0
 
@@ -357,22 +357,23 @@ else:
     dt = lgb.Dataset(Xt, yt, silent=True)
     ds = lgb.Dataset(Xs, ys, silent=True)
     dv = lgb.Dataset(Xv, yv, silent=True)
-    # rmse 3196.296911696699
+    # multi_logloss: 0.16234512513461433
     best_params = {
-        "objective": "regression",
-        "metric": "rmse",
+        "objective": "multiclass",
+        "metric": "multi_logloss",
         "verbose": -1,
         "n_jobs": 6,
-        "learning_rate": 0.0035969087735309765,
+        "num_classes": 3,
+        "learning_rate": 0.22150522497815395,
         "feature_pre_filter": False,
         "lambda_l1": 0.0,
         "lambda_l2": 0.0,
-        "num_leaves": 108,
-        "feature_fraction": 0.8999999999999999,
-        "bagging_fraction": 1.0,
-        "bagging_freq": 0,
+        "num_leaves": 2,
+        "feature_fraction": 1.0,
+        "bagging_fraction": 0.40995826910607314,
+        "bagging_freq": 1,
         "min_child_samples": 20,
-        "num_boost_rounds": 7323,
+        "num_boost_rounds": 64,
     }
     model = lgb.train(
         best_params,
@@ -403,14 +404,13 @@ from sklearn.metrics import (
     mean_squared_error,
 )
 
-r2_score(yv, model.predict(Xv))
-np.sqrt(mean_squared_error(yv, model.predict(Xv)))
+accuracy_score(yv, model.predict(Xv).argmax(axis=1))  # 0.8947368421052632
 
 from sklearn.metrics import mean_squared_error, r2_score
 import numpy as np
 
 # test score
-TEST = True
+TEST = False
 if TEST:
     df_test = pd.read_csv("data/test.csv", parse_dates=["date"])
     y_test = df_test["quantity"]
