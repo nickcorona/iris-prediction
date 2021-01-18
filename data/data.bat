@@ -1,1 +1,1 @@
-kaggle datasets download -d veeralakrishna/predict-demand
+kaggle datasets download -d uciml/iris
